@@ -199,7 +199,7 @@ export const Home = () => {
 			notificar("Agrega al menos un ítem", "error");
 			return;
 		}
-				setEmitiendo(true);
+		setEmitiendo(true);
 		try {
 			// Guarda TODOS los ítems en paralelo (mucho más rápido que uno por uno)
 			const respuestas = await Promise.all(
@@ -395,9 +395,7 @@ export const Home = () => {
 			{/* ---------------- IMPRIMIBLE ---------------- */}
 			{reciboEmitido && (
 				<div className="print-area">
-					<Ticket copia="COPIA OFICINA" data={reciboEmitido} />
-					<div className="rc-cut">✂ - - - - - - - - - - - - - - - -</div>
-					<Ticket copia="COPIA ACUDIENTE" data={reciboEmitido} />
+					<Ticket copia="RECIBO DE CAJA" data={reciboEmitido} />
 				</div>
 			)}
 
@@ -440,7 +438,7 @@ function Ticket({ copia, data }) {
 					<div className="t-obs">Obs: {data.observacion}</div>
 				</>
 			) : null}
-						<div className="t-dash" />
+			<div className="t-dash" />
 			<div className="t-total">
 				<span>TOTAL</span>
 				<b>{COP(data.total)}</b>

@@ -325,40 +325,50 @@
 
   .print-area {
     display: block !important;
-    width: 58mm;
+    width: 50mm;
     margin: 0;
     color: #000;
     font-family: var(--mono);
   }
-  .ticket { width: 54mm; padding: 2mm; }
-  .rc-cut { text-align: center; font-size: 9px; margin: 3mm 0; letter-spacing: 1px; }
+  
+  .ticket {
+    width: 50mm;
+    height: 50mm;
+    max-height: 50mm;
+    padding: 1.5mm 2mm;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;    /* centra todo verticalmente */
+    page-break-after: avoid;
+    break-after: avoid;
+  }
 
-  .t-inst { text-align: center; font-weight: 700; font-size: 12px; line-height: 1.2; }
+  .rc-cut { display: none; }
+
+  .t-inst { text-align: center; font-weight: 700; font-size: 11px; line-height: 1.1; }
   .t-copia {
     text-align: center; font-size: 10px; font-weight: 700;
-    border: 1px solid #000; padding: 1px 0; margin: 4px 0;
+    border: 1px solid #000; padding: 1px 0; margin: 2px 0;
   }
-  .t-dash { border-top: 1px dashed #000; margin: 4px 0; }
-  .t-row { display: flex; justify-content: space-between; font-size: 11px; }
+  .t-dash { border-top: 1px dashed #000; margin: 3px 0; }
+  .t-row { display: flex; justify-content: space-between; font-size: 11px; margin: 1px 0; }
 
-  .t-item { margin: 4px 0; }
+  .t-item { margin: 3px 0; }
   .t-item-top { display: flex; justify-content: space-between; }
   .t-est { font-size: 12px; font-weight: 700; }
   .t-gr { font-size: 10px; }
-  .t-item-bot { display: flex; justify-content: space-between; font-size: 11px; }
+  .t-item-bot { display: flex; justify-content: space-between; font-size: 11px; margin-top: 2px; }
 
-  .t-obs { font-size: 10px; }
-  .t-total { display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; }
-  .t-sello { font-size: 9px; text-align: center; margin-top: 8px; }
-  .t-sello-box { height: 15mm; border: 1px dashed #000; margin: 2px 0; }
-  .t-foot { font-size: 8px; text-align: center; margin-top: 3px; }
+  .t-obs { font-size: 10px; margin-top: 2px; }
+  .t-total { display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; margin-top: 3px; }
+  .t-foot { display: none; }
 
   @page {
-    size: 58mm auto;   /* ancho fijo, alto automático según contenido */
+    size: 50mm 50mm;
     margin: 0;
   }
 }
-
 
 /* =========================================================
    NUEVO: Overlay de guardado, Análisis, clave
