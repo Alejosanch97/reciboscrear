@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import "../styles/home.css";
+import emailjs from "@emailjs/browser";
 import {
 	API_URL,
 	getCachedThenRevalidate,
@@ -25,6 +26,11 @@ import {
 
 const CLAVE_ANALISIS = "CREAR1966";
 
+// ---- EmailJS ----
+const EMAILJS_SERVICE = "service_8dqywo2";
+const EMAILJS_TEMPLATE = "template_xmgt31a";
+const EMAILJS_PUBLIC_KEY = "VQ0tJwGauSCwIY_cf";
+
 const COP = (n) =>
 	new Intl.NumberFormat("es-CO", {
 		style: "currency",
@@ -36,6 +42,9 @@ const hoyISO = () => new Date().toISOString().slice(0, 10);
 
 // id_niño puede llegar como "id_niño" o "id_ni_o" (versión limpia del backend)
 const idNinoDe = (n) => (n.id_niño ?? n.id_ni_o ?? "").toString();
+
+const esCorreoValido = (c) =>
+	/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((c ?? "").toString().trim());
 
 // Apps Script rechaza el preflight de application/json → text/plain
 async function postAction(payload) {
@@ -168,7 +177,7 @@ export const Home = () => {
 				id_niño: idNinoDe(nino),
 				estudiante: nino.nombre_completo,
 				grado: nino.grado,
-				acudiente: nino.acudiente,
+				acudiente: nino.acudiente, // aquí está guardado el CORREO
 				id_concepto: concepto.id_concepto.toString(),
 				concepto: concepto.concepto,
 				valor: Number(concepto.valor) || 0,
@@ -192,39 +201,87 @@ export const Home = () => {
 		setConceptoSel("");
 	};
 
-	const emitirEImprimir = async () => {
-		// Guarda anti-doble-clic: si ya está emitiendo, no hace nada
+	// ---- Envío del correo con EmailJS ----
+	const enviarCorreo = async (recibo, correoDestino) => {
+		// Lista de ítems como texto (un renglón por estudiante)
+		const lineasItems = recibo.items
+			.map((it) => `${it.estudiante} (${it.grado}) — ${it.concepto}: ${COP(it.valor)}`)
+			.join("\n");
+
+		const params = {
+			email: correoDestino,
+			numero_recibo: String(recibo.numero).padStart(5, "0"),
+			fecha: recibo.fecha,
+			items: lineasItems,
+			observacion: recibo.observacion || "—",
+			total: COP(recibo.total),
+		};
+
+		return emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, params, {
+			publicKey: EMAILJS_PUBLIC_KEY,
+		});
+	};
+
+	// ---- Emitir recibo + enviar correo al acudiente ----
+	const emitirYEnviar = async () => {
 		if (emitiendo) return;
 		if (items.length === 0) {
 			notificar("Agrega al menos un ítem", "error");
 			return;
 		}
-		setEmitiendo(true);
-		try {
-			// Guarda TODOS los ítems en paralelo (mucho más rápido que uno por uno)
-			const respuestas = await Promise.all(
-				items.map((it) =>
-					postAction({
-						action: "emitir_recibo",
-						id_niño: it.id_niño,
-						id_concepto: it.id_concepto,
-						fecha,
-						observacion,
-					})
-				)
-			);
-			const falló = respuestas.find((r) => r.status !== "success");
-			if (falló) throw new Error(falló.message || "Error al emitir");
 
-			const numero = respuestas[0]?.recibo?.id_recibo ?? "";
-			setReciboEmitido({ numero, fecha, items, observacion, total });
-			setEmitiendo(false);
-			// Pinta la vista y abre impresión enseguida
-			setTimeout(() => window.print(), 150);
-		} catch (e) {
-			notificar(e.message, "error");
-			setEmitiendo(false);
+		// El correo del acudiente está en la columna "acudiente".
+		// Se toma del primer ítem del recibo.
+		const correoDestino = (items[0].acudiente ?? "").toString().trim();
+		if (!esCorreoValido(correoDestino)) {
+			notificar(
+				"El acudiente de este estudiante no tiene un correo válido guardado",
+				"error"
+			);
+			return;
 		}
+
+		// Snapshot del recibo ANTES de esperar nada (para el correo y la vista)
+		const itemsSnapshot = items;
+		const fechaSnapshot = fecha;
+		const obsSnapshot = observacion;
+		const totalSnapshot = total;
+
+		// 1) Éxito INSTANTÁNEO: sin await, todo va por detrás
+		notificar("Recibo guardado · enviando a " + correoDestino);
+		limpiarRecibo();
+
+		// 2) Guarda en la hoja por detrás; cuando responde, manda el correo con el número real
+		Promise.all(
+			itemsSnapshot.map((it) =>
+				postAction({
+					action: "emitir_recibo",
+					id_niño: it.id_niño,
+					id_concepto: it.id_concepto,
+					fecha: fechaSnapshot,
+					observacion: obsSnapshot,
+				})
+			)
+		)
+			.then((respuestas) => {
+				const falló = respuestas.find((r) => r.status !== "success");
+				if (falló) throw new Error(falló.message || "Error al emitir");
+
+				const numero = respuestas[0]?.recibo?.id_recibo ?? "";
+				const recibo = {
+					numero,
+					fecha: fechaSnapshot,
+					items: itemsSnapshot,
+					observacion: obsSnapshot,
+					total: totalSnapshot,
+				};
+				setReciboEmitido(recibo);
+				return enviarCorreo(recibo, correoDestino);
+			})
+			.then(() => notificar("Correo enviado a " + correoDestino))
+			.catch((e) =>
+				notificar("Falló el envío: " + (e.text || e.message || "error"), "error")
+			);
 	};
 
 	return (
@@ -343,6 +400,15 @@ export const Home = () => {
 							</ul>
 						)}
 
+						{/* Aviso del correo destino (tomado del acudiente) */}
+						{items.length > 0 && (
+							<p className="rc-hint">
+								{esCorreoValido(items[0].acudiente)
+									? `El recibo se enviará a: ${items[0].acudiente}`
+									: "⚠ Este acudiente no tiene un correo válido guardado."}
+							</p>
+						)}
+
 						<div className="rc-bottom">
 							<div className="rc-field rc-field-date">
 								<label>Fecha</label>
@@ -369,10 +435,10 @@ export const Home = () => {
 							</button>
 							<button
 								className="rc-primary"
-								onClick={emitirEImprimir}
+								onClick={emitirYEnviar}
 								disabled={items.length === 0 || emitiendo}
 							>
-								{emitiendo ? "Guardando…" : "Guardar e imprimir"}
+								{emitiendo ? "Enviando…" : "Guardar y enviar correo"}
 							</button>
 						</div>
 					</section>
@@ -392,7 +458,7 @@ export const Home = () => {
 			{/* ---------------- ANÁLISIS ---------------- */}
 			{tab === "analisis" && <Analisis notificar={notificar} />}
 
-			{/* ---------------- IMPRIMIBLE ---------------- */}
+			{/* ---------------- IMPRIMIBLE (queda disponible por si quieres imprimir también) ---------------- */}
 			{reciboEmitido && (
 				<div className="print-area">
 					<Ticket copia="RECIBO DE CAJA" data={reciboEmitido} />
@@ -539,10 +605,12 @@ function CrudEstudiantes({ ninos, setNinos, grados, notificar }) {
 						</datalist>
 					</div>
 					<div className="rc-field">
-						<label>Acudiente</label>
+						<label>Acudiente (correo)</label>
 						<input
+							type="email"
 							value={form.acudiente}
 							onChange={(e) => setForm({ ...form, acudiente: e.target.value })}
+							placeholder="correo@ejemplo.com"
 						/>
 					</div>
 					<div className="rc-field">
@@ -568,7 +636,7 @@ function CrudEstudiantes({ ninos, setNinos, grados, notificar }) {
 							<tr>
 								<th>Nombre</th>
 								<th>Grado</th>
-								<th>Acudiente</th>
+								<th>Acudiente (correo)</th>
 								<th>Teléfono</th>
 							</tr>
 						</thead>
