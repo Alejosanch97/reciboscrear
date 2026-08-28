@@ -31,6 +31,12 @@ const EMAILJS_SERVICE = "service_8dqywo2";
 const EMAILJS_TEMPLATE = "template_xmgt31a";
 const EMAILJS_PUBLIC_KEY = "VQ0tJwGauSCwIY_cf";
 
+// Banner "ANULADO" gigante que se inyecta en el template (variable estado_banner)
+const BANNER_ANULADO = `
+<div style="max-width:600px;margin:8px auto 0;background:#c02626;color:#fff;text-align:center;padding:14px;font-family:system-ui,sans-serif,Arial;">
+  <span style="font-size:34px;font-weight:800;letter-spacing:6px;">ANULADO</span>
+</div>`;
+
 const COP = (n) =>
 	new Intl.NumberFormat("es-CO", {
 		style: "currency",
@@ -201,9 +207,8 @@ export const Home = () => {
 		setConceptoSel("");
 	};
 
-	// ---- Envío del correo con EmailJS ----
+	// ---- Envío del correo con EmailJS (emisión normal) ----
 	const enviarCorreo = async (recibo, correoDestino) => {
-		// Lista de ítems como texto (un renglón por estudiante)
 		const lineasItems = recibo.items
 			.map((it) => `${it.estudiante} (${it.grado}) — ${it.concepto}: ${COP(it.valor)}`)
 			.join("\n");
@@ -215,6 +220,7 @@ export const Home = () => {
 			items: lineasItems,
 			observacion: recibo.observacion || "—",
 			total: COP(recibo.total),
+			estado_banner: "", // emisión normal: sin banner
 		};
 
 		return emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, params, {
@@ -230,8 +236,6 @@ export const Home = () => {
 			return;
 		}
 
-		// El correo del acudiente está en la columna "acudiente".
-		// Se toma del primer ítem del recibo.
 		const correoDestino = (items[0].acudiente ?? "").toString().trim();
 		if (!esCorreoValido(correoDestino)) {
 			notificar(
@@ -241,17 +245,14 @@ export const Home = () => {
 			return;
 		}
 
-		// Snapshot del recibo ANTES de esperar nada (para el correo y la vista)
 		const itemsSnapshot = items;
 		const fechaSnapshot = fecha;
 		const obsSnapshot = observacion;
 		const totalSnapshot = total;
 
-		// 1) Éxito INSTANTÁNEO: sin await, todo va por detrás
 		notificar("Recibo guardado · enviando a " + correoDestino);
 		limpiarRecibo();
 
-		// 2) Guarda en la hoja por detrás; cuando responde, manda el correo con el número real
 		Promise.all(
 			itemsSnapshot.map((it) =>
 				postAction({
@@ -400,7 +401,6 @@ export const Home = () => {
 							</ul>
 						)}
 
-						{/* Aviso del correo destino (tomado del acudiente) */}
 						{items.length > 0 && (
 							<p className="rc-hint">
 								{esCorreoValido(items[0].acudiente)
@@ -456,9 +456,9 @@ export const Home = () => {
 			)}
 
 			{/* ---------------- ANÁLISIS ---------------- */}
-			{tab === "analisis" && <Analisis notificar={notificar} />}
+			{tab === "analisis" && <Analisis ninos={ninos} notificar={notificar} />}
 
-			{/* ---------------- IMPRIMIBLE (queda disponible por si quieres imprimir también) ---------------- */}
+			{/* ---------------- IMPRIMIBLE ---------------- */}
 			{reciboEmitido && (
 				<div className="print-area">
 					<Ticket copia="RECIBO DE CAJA" data={reciboEmitido} />
@@ -773,16 +773,17 @@ function CrudConceptos({ conceptos, setConceptos, notificar }) {
 }
 
 /* ======================================================
-   ANÁLISIS (protegido con clave)
+   ANÁLISIS (protegido con clave) + VER/ANULAR RECIBOS
    ====================================================== */
 const PALETA = ["#3d7bff", "#1b2a4a", "#12805c", "#e0a500", "#c02626", "#7c3aed", "#0891b2"];
 
-function Analisis({ notificar }) {
+function Analisis({ ninos, notificar }) {
 	const [ok, setOk] = useState(false);
 	const [clave, setClave] = useState("");
 	const [recibos, setRecibos] = useState([]);
 	const [cargando, setCargando] = useState(false);
 	const [modo, setModo] = useState("dia"); // "dia" | "mes"
+	const [vista, setVista] = useState("recaudo"); // "recaudo" | "verrecibos"
 
 	const entrar = () => {
 		if (clave.trim() === CLAVE_ANALISIS) {
@@ -819,10 +820,19 @@ function Analisis({ notificar }) {
 	const claveDia = (d) => d.toISOString().slice(0, 10);
 	const claveMes = (d) => d.toISOString().slice(0, 7);
 
-	// Serie temporal: total por día o por mes
+	// Sólo recibos NO anulados cuentan para el recaudo
+	const recibosActivos = useMemo(
+		() =>
+			recibos.filter(
+				(r) => (r.estado ?? "").toString().trim().toUpperCase() !== "ANULADO"
+			),
+		[recibos]
+	);
+
+	// Serie temporal: total por día o por mes (sólo activos)
 	const serie = useMemo(() => {
 		const map = new Map();
-		recibos.forEach((r) => {
+		recibosActivos.forEach((r) => {
 			const d = parseFecha(r.fecha);
 			if (!d) return;
 			const k = modo === "dia" ? claveDia(d) : claveMes(d);
@@ -832,12 +842,12 @@ function Analisis({ notificar }) {
 		return [...map.entries()]
 			.sort((a, b) => a[0].localeCompare(b[0]))
 			.map(([periodo, valor]) => ({ periodo, valor }));
-	}, [recibos, modo]);
+	}, [recibosActivos, modo]);
 
-	// Distribución por concepto (pie)
+	// Distribución por concepto (pie, sólo activos)
 	const porConcepto = useMemo(() => {
 		const map = new Map();
-		recibos.forEach((r) => {
+		recibosActivos.forEach((r) => {
 			const c = (r.concepto ?? "Otro").toString();
 			const v = Number(r.valor) || 0;
 			map.set(c, (map.get(c) || 0) + v);
@@ -845,11 +855,11 @@ function Analisis({ notificar }) {
 		return [...map.entries()]
 			.sort((a, b) => b[1] - a[1])
 			.map(([name, value]) => ({ name, value }));
-	}, [recibos]);
+	}, [recibosActivos]);
 
 	const totalGeneral = useMemo(
-		() => recibos.reduce((acc, r) => acc + (Number(r.valor) || 0), 0),
-		[recibos]
+		() => recibosActivos.reduce((acc, r) => acc + (Number(r.valor) || 0), 0),
+		[recibosActivos]
 	);
 
 	// ---- Pantalla de clave ----
@@ -881,18 +891,17 @@ function Analisis({ notificar }) {
 		);
 	}
 
-	// ---- Panel de análisis ----
+	// ---- Panel (con sub-pestañas Recaudo / Ver recibos) ----
 	return (
 		<main className="rc-main no-print">
 			<section className="rc-card">
 				<div className="rc-analisis-head">
-					<h2 className="rc-h2" style={{ margin: 0 }}>Recaudo</h2>
 					<div className="rc-seg">
-						<button className={modo === "dia" ? "on" : ""} onClick={() => setModo("dia")}>
-							Por día
+						<button className={vista === "recaudo" ? "on" : ""} onClick={() => setVista("recaudo")}>
+							Recaudo
 						</button>
-						<button className={modo === "mes" ? "on" : ""} onClick={() => setModo("mes")}>
-							Por mes
+						<button className={vista === "verrecibos" ? "on" : ""} onClick={() => setVista("verrecibos")}>
+							Ver recibos
 						</button>
 					</div>
 					<button className="rc-refresh" onClick={cargarRecibos} disabled={cargando}>
@@ -900,81 +909,330 @@ function Analisis({ notificar }) {
 						{cargando ? "Cargando…" : "Recargar"}
 					</button>
 				</div>
-
-				<div className="rc-stats">
-					<div className="rc-stat">
-						<span>Total recaudado</span>
-						<strong>{COP(totalGeneral)}</strong>
-					</div>
-					<div className="rc-stat">
-						<span>Recibos</span>
-						<strong>{recibos.length}</strong>
-					</div>
-					<div className="rc-stat">
-						<span>{modo === "dia" ? "Días" : "Meses"} con recaudo</span>
-						<strong>{serie.length}</strong>
-					</div>
-				</div>
 			</section>
 
-			<section className="rc-card">
-				<h2 className="rc-h2">Recaudo {modo === "dia" ? "diario" : "mensual"}</h2>
-				{serie.length === 0 ? (
-					<p className="rc-hint">Aún no hay recibos para mostrar.</p>
-				) : (
-					<div style={{ width: "100%", height: 300 }}>
-						<ResponsiveContainer>
-							{modo === "dia" ? (
-								<BarChart data={serie} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-									<CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-									<XAxis dataKey="periodo" tick={{ fontSize: 12 }} />
-									<YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `${v / 1000}k`} />
-									<Tooltip formatter={(v) => COP(v)} />
-									<Bar dataKey="valor" fill="#3d7bff" radius={[6, 6, 0, 0]} />
-								</BarChart>
-							) : (
-								<LineChart data={serie} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-									<CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-									<XAxis dataKey="periodo" tick={{ fontSize: 12 }} />
-									<YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `${v / 1000}k`} />
-									<Tooltip formatter={(v) => COP(v)} />
-									<Line type="monotone" dataKey="valor" stroke="#3d7bff" strokeWidth={3} dot={{ r: 4 }} />
-								</LineChart>
-							)}
-						</ResponsiveContainer>
-					</div>
-				)}
-			</section>
+			{vista === "recaudo" ? (
+				<>
+					<section className="rc-card">
+						<div className="rc-analisis-head">
+							<h2 className="rc-h2" style={{ margin: 0 }}>Recaudo</h2>
+							<div className="rc-seg">
+								<button className={modo === "dia" ? "on" : ""} onClick={() => setModo("dia")}>
+									Por día
+								</button>
+								<button className={modo === "mes" ? "on" : ""} onClick={() => setModo("mes")}>
+									Por mes
+								</button>
+							</div>
+						</div>
 
-			<section className="rc-card">
-				<h2 className="rc-h2">Distribución por concepto</h2>
-				{porConcepto.length === 0 ? (
-					<p className="rc-hint">Aún no hay datos.</p>
-				) : (
-					<div style={{ width: "100%", height: 300 }}>
-						<ResponsiveContainer>
-							<PieChart>
-								<Pie
-									data={porConcepto}
-									dataKey="value"
-									nameKey="name"
-									cx="50%"
-									cy="50%"
-									outerRadius={100}
-									label={(e) => e.name}
-								>
-									{porConcepto.map((_, i) => (
-										<Cell key={i} fill={PALETA[i % PALETA.length]} />
-									))}
-								</Pie>
-								<Tooltip formatter={(v) => COP(v)} />
-								<Legend />
-							</PieChart>
-						</ResponsiveContainer>
-					</div>
-				)}
-			</section>
+						<div className="rc-stats">
+							<div className="rc-stat">
+								<span>Total recaudado</span>
+								<strong>{COP(totalGeneral)}</strong>
+							</div>
+							<div className="rc-stat">
+								<span>Recibos activos</span>
+								<strong>{recibosActivos.length}</strong>
+							</div>
+							<div className="rc-stat">
+								<span>{modo === "dia" ? "Días" : "Meses"} con recaudo</span>
+								<strong>{serie.length}</strong>
+							</div>
+						</div>
+					</section>
+
+					<section className="rc-card">
+						<h2 className="rc-h2">Recaudo {modo === "dia" ? "diario" : "mensual"}</h2>
+						{serie.length === 0 ? (
+							<p className="rc-hint">Aún no hay recibos para mostrar.</p>
+						) : (
+							<div style={{ width: "100%", height: 300 }}>
+								<ResponsiveContainer>
+									{modo === "dia" ? (
+										<BarChart data={serie} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+											<CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+											<XAxis dataKey="periodo" tick={{ fontSize: 12 }} />
+											<YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `${v / 1000}k`} />
+											<Tooltip formatter={(v) => COP(v)} />
+											<Bar dataKey="valor" fill="#3d7bff" radius={[6, 6, 0, 0]} />
+										</BarChart>
+									) : (
+										<LineChart data={serie} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+											<CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+											<XAxis dataKey="periodo" tick={{ fontSize: 12 }} />
+											<YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `${v / 1000}k`} />
+											<Tooltip formatter={(v) => COP(v)} />
+											<Line type="monotone" dataKey="valor" stroke="#3d7bff" strokeWidth={3} dot={{ r: 4 }} />
+										</LineChart>
+									)}
+								</ResponsiveContainer>
+							</div>
+						)}
+					</section>
+
+					<section className="rc-card">
+						<h2 className="rc-h2">Distribución por concepto</h2>
+						{porConcepto.length === 0 ? (
+							<p className="rc-hint">Aún no hay datos.</p>
+						) : (
+							<div style={{ width: "100%", height: 300 }}>
+								<ResponsiveContainer>
+									<PieChart>
+										<Pie
+											data={porConcepto}
+											dataKey="value"
+											nameKey="name"
+											cx="50%"
+											cy="50%"
+											outerRadius={100}
+											label={(e) => e.name}
+										>
+											{porConcepto.map((_, i) => (
+												<Cell key={i} fill={PALETA[i % PALETA.length]} />
+											))}
+										</Pie>
+										<Tooltip formatter={(v) => COP(v)} />
+										<Legend />
+									</PieChart>
+								</ResponsiveContainer>
+							</div>
+						)}
+					</section>
+				</>
+			) : (
+				<VerRecibos
+					recibos={recibos}
+					setRecibos={setRecibos}
+					ninos={ninos}
+					cargando={cargando}
+					notificar={notificar}
+				/>
+			)}
 		</main>
+	);
+}
+
+/* ======================================================
+   VER / ANULAR RECIBOS
+   ====================================================== */
+function VerRecibos({ recibos, setRecibos, ninos, cargando, notificar }) {
+	const [busqueda, setBusqueda] = useState("");
+	const [anulandoId, setAnulandoId] = useState(null);
+	const [confirmando, setConfirmando] = useState(null); // id_recibo pendiente
+	const [motivo, setMotivo] = useState("");
+
+	// Agrupa filas por id_recibo (un recibo = varios ítems)
+	const recibosAgrupados = useMemo(() => {
+		const map = new Map();
+		recibos.forEach((r) => {
+			const id = (r.id_recibo ?? "").toString();
+			if (!id) return;
+			if (!map.has(id)) {
+				map.set(id, {
+					id_recibo: id,
+					fecha: r.fecha,
+					observacion: r.observacion,
+					estado: (r.estado ?? "").toString().trim().toUpperCase() || "ACTIVO",
+					items: [],
+					total: 0,
+				});
+			}
+			const g = map.get(id);
+			g.items.push({
+				estudiante: r.estudiante,
+				grado: r.grado,
+				concepto: r.concepto,
+				valor: Number(r.valor) || 0,
+			});
+			g.total += Number(r.valor) || 0;
+			if ((r.estado ?? "").toString().trim().toUpperCase() === "ANULADO") {
+				g.estado = "ANULADO";
+			}
+		});
+		return [...map.values()].sort(
+			(a, b) => Number(b.id_recibo) - Number(a.id_recibo)
+		);
+	}, [recibos]);
+
+	const filtrados = useMemo(() => {
+		const q = busqueda.trim().toLowerCase();
+		if (!q) return recibosAgrupados;
+		return recibosAgrupados.filter((r) => {
+			if (r.id_recibo.includes(q)) return true;
+			return r.items.some(
+				(it) =>
+					(it.estudiante ?? "").toLowerCase().includes(q) ||
+					(it.concepto ?? "").toLowerCase().includes(q)
+			);
+		});
+	}, [recibosAgrupados, busqueda]);
+
+	// Busca el correo del acudiente (por nombre del estudiante del primer ítem)
+	const correoDelRecibo = (recibo) => {
+		const primer = recibo.items[0];
+		if (!primer) return "";
+		const nino = ninos.find(
+			(n) => (n.nombre_completo ?? "") === primer.estudiante
+		);
+		return (nino?.acudiente ?? "").toString().trim();
+	};
+
+	// Correo de anulación: mismo template + banner ANULADO
+	const enviarCorreoAnulacion = async (recibo, correoDestino, motivoTexto) => {
+		const lineasItems = recibo.items
+			.map((it) => `${it.estudiante} (${it.grado}) — ${it.concepto}: ${COP(it.valor)}`)
+			.join("\n");
+
+		const params = {
+			email: correoDestino,
+			numero_recibo: String(recibo.id_recibo).padStart(5, "0"),
+			fecha: recibo.fecha,
+			items: lineasItems,
+			observacion: motivoTexto
+				? `ANULADO · ${motivoTexto}`
+				: (recibo.observacion || "ANULADO"),
+			total: COP(recibo.total),
+			estado_banner: BANNER_ANULADO, // ← el "ANULADO" gigante
+		};
+
+		return emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, params, {
+			publicKey: EMAILJS_PUBLIC_KEY,
+		});
+	};
+
+	const anular = async (recibo) => {
+		if (anulandoId) return;
+		setAnulandoId(recibo.id_recibo);
+
+		const correoDestino = correoDelRecibo(recibo);
+		const motivoTexto = motivo;
+
+		try {
+			const r = await postAction({
+				action: "anular_recibo",
+				id_recibo: recibo.id_recibo,
+				motivo: motivoTexto,
+			});
+			if (r.status !== "success") throw new Error(r.message);
+
+			notificar("Recibo N° " + recibo.id_recibo + " anulado");
+
+			// marca localmente sin recargar todo
+			setRecibos((prev) =>
+				prev.map((row) =>
+					(row.id_recibo ?? "").toString() === recibo.id_recibo
+						? { ...row, estado: "ANULADO" }
+						: row
+				)
+			);
+
+			if (esCorreoValido(correoDestino)) {
+				enviarCorreoAnulacion(recibo, correoDestino, motivoTexto)
+					.then(() => notificar("Correo de anulación enviado a " + correoDestino))
+					.catch((e) =>
+						notificar(
+							"Anulado, pero falló el correo: " + (e.text || e.message || "error"),
+							"error"
+						)
+					);
+			} else {
+				notificar("Anulado (sin correo: acudiente sin correo válido)", "error");
+			}
+		} catch (e) {
+			notificar("No se pudo anular: " + (e.message || "error"), "error");
+		} finally {
+			setAnulandoId(null);
+			setConfirmando(null);
+			setMotivo("");
+		}
+	};
+
+	return (
+		<section className="rc-card">
+			<div className="rc-analisis-head">
+				<h2 className="rc-h2" style={{ margin: 0 }}>Recibos emitidos</h2>
+				<input
+					type="text"
+					value={busqueda}
+					onChange={(e) => setBusqueda(e.target.value)}
+					placeholder="Buscar por N°, estudiante o concepto"
+					className="rc-lock-input"
+					style={{ maxWidth: 320 }}
+				/>
+			</div>
+
+			{filtrados.length === 0 ? (
+				<p className="rc-hint">
+					{cargando ? "Cargando recibos…" : "No hay recibos para mostrar."}
+				</p>
+			) : (
+				<ul className="rc-items">
+					{filtrados.map((r) => (
+						<li
+							key={r.id_recibo}
+							className="rc-recibo-row"
+							style={{ opacity: r.estado === "ANULADO" ? 0.55 : 1 }}
+						>
+							<div className="rc-item-main rc-recibo-id">
+								<span className="rc-item-name">
+									N° {String(r.id_recibo).padStart(5, "0")}
+								</span>
+								<span className="rc-item-grade">{r.fecha}</span>
+							</div>
+
+							<div className="rc-recibo-items">
+								{r.items.map((it, i) => (
+									<div key={i}>
+										{it.estudiante} · {it.concepto} · {COP(it.valor)}
+									</div>
+								))}
+							</div>
+
+							<span className="rc-item-value">{COP(r.total)}</span>
+
+							{r.estado === "ANULADO" ? (
+								<span className="rc-badge-anulado">ANULADO</span>
+							) : confirmando === r.id_recibo ? (
+								<div className="rc-confirm-row">
+									<input
+										type="text"
+										value={motivo}
+										onChange={(e) => setMotivo(e.target.value)}
+										placeholder="Motivo (opcional)"
+										className="rc-lock-input"
+									/>
+									<button
+										className="rc-btn-confirm-anular"
+										onClick={() => anular(r)}
+										disabled={anulandoId === r.id_recibo}
+									>
+										{anulandoId === r.id_recibo ? "Anulando…" : "Confirmar anulación"}
+									</button>
+									<button
+										className="rc-ghost"
+										onClick={() => {
+											setConfirmando(null);
+											setMotivo("");
+										}}
+										disabled={anulandoId === r.id_recibo}
+									>
+										Cancelar
+									</button>
+								</div>
+							) : (
+								<button
+									className="rc-btn-anular"
+									onClick={() => setConfirmando(r.id_recibo)}
+								>
+									Anular
+								</button>
+							)}
+						</li>
+					))}
+				</ul>
+			)}
+		</section>
 	);
 }
 
