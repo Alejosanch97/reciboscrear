@@ -216,6 +216,24 @@ function App({ sesion, onSalir }) {
 	const esValorLibre = !!conceptoObj && !tieneValor(conceptoObj);
 	const ninoActual = ninos.find((n) => idNinoDe(n) === ninoSel);
 
+	// Los cursos solo aparecen si el estudiante tiene OK en su columna de la hoja Niños
+	const conceptosVisibles = useMemo(
+		() =>
+			conceptos.filter((c) => {
+				const curso = cursoDe(c.id_concepto);
+				if (!curso) return true;
+				return !!ninoActual && inscrito(ninoActual, curso.columna);
+			}),
+		[conceptos, ninoActual]
+	);
+
+	// Si cambias de estudiante y el curso elegido ya no le aplica, se limpia
+	useEffect(() => {
+		if (conceptoSel && !conceptosVisibles.some((c) => (c.id_concepto ?? "").toString() === conceptoSel)) {
+			setConceptoSel("");
+		}
+	}, [conceptosVisibles]); // eslint-disable-line react-hooks/exhaustive-deps
+
 	const opcionesMes = useMemo(() => {
 		if (!conceptoEsCurso || !ninoSel) return [];
 		const est = estadoCurso(recibos, ninoSel, conceptoSel, anioRecibo);
@@ -497,7 +515,7 @@ function App({ sesion, onSalir }) {
 									}}
 								>
 									<option value="">—</option>
-									{conceptos.map((c) => (
+									{conceptosVisibles.map((c) => (
 										<option key={c.id_concepto} value={c.id_concepto}>
 											{c.concepto} · {tieneValor(c) ? COP(c.valor) : "valor libre"}
 										</option>
