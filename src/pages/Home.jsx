@@ -684,7 +684,7 @@ function App({ sesion, onSalir }) {
 								<input type="checkbox" checked={autoImprimir} onChange={(e) => cambiarAutoImprimir(e.target.checked)} />
 								<span>Imprimir 2 copias al guardar</span>
 							</label>
-							{soportaDirecta() && (
+							{false && soportaDirecta() && (
 								<button
 									type="button"
 									className={`rc-termica ${termica ? "on" : ""}`}
