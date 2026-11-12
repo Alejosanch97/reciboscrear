@@ -299,6 +299,31 @@
   animation: rc-up 0.2s ease; max-width: calc(100vw - 32px);
 }
 .rc-toast.ok { background: var(--ok); }
+
+/* ---------- Pausa entre original y copia ---------- */
+.rc-copia {
+  position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 120;
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px 18px; overflow: hidden;
+  background: var(--superficie); border: 1px solid var(--linea); border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(16, 24, 40, 0.18);
+  animation: rc-up 0.25s ease;
+}
+.rc-copia-ico {
+  width: 40px; height: 40px; flex-shrink: 0; display: grid; place-items: center;
+  border-radius: 12px; background: #f6efe0; color: #8a6a2f; font-size: 18px;
+}
+.rc-copia-txt { display: flex; flex-direction: column; gap: 2px; margin-right: 6px; }
+.rc-copia-txt b { font-size: 14px; color: var(--tinta); }
+.rc-copia-txt span { font-size: 13px; color: var(--suave); }
+.rc-copia-txt strong { color: var(--tinta); font-variant-numeric: tabular-nums; }
+.rc-copia .rc-primary, .rc-copia .rc-ghost { padding: 10px 16px; font-size: 13px; white-space: nowrap; }
+.rc-copia-barra {
+  position: absolute; left: 0; bottom: 0; height: 4px; width: 100%;
+  background: var(--tinta); transform-origin: left;
+  animation-name: rc-copia-barra; animation-timing-function: linear; animation-fill-mode: forwards;
+}
+@keyframes rc-copia-barra { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 .rc-toast.error { background: var(--err); }
 @keyframes rc-up { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
 

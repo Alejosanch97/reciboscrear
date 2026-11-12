@@ -20,6 +20,9 @@ const COPIAS_RECIBO = ["ORIGINAL · ACUDIENTE", "COPIA · ARCHIVO"];
 // Ancho del rollo de la impresora térmica (58 u 80)
 const ANCHO_PAPEL_MM = 58;
 
+// Segundos de pausa entre el original (papá) y la copia (archivo) para cortar el papel
+const PAUSA_COPIA = 6;
+
 // ---- EmailJS ----
 const EMAILJS_SERVICE = "service_8dqywo2";
 const EMAILJS_TEMPLATE = "template_xmgt31a";
@@ -178,6 +181,36 @@ function App({ sesion, onSalir }) {
 
 	const notificar = useCallback((msg, tipo = "ok") => setToast({ msg, tipo, n: Date.now() }), []);
 	avisarRef.current = notificar;
+
+	// ---- Copia de archivo: sale después de una pausa para cortar el original ----
+	const [copiaPendiente, setCopiaPendiente] = useState(null);
+	const [cuenta, setCuenta] = useState(0);
+	const copiaRef = useRef(null);
+
+	const imprimirCopia = useCallback(() => {
+		const cp = copiaRef.current;
+		if (!cp) return;
+		copiaRef.current = null;
+		setCopiaPendiente(null);
+		imprimir({ tipo: "recibo", data: cp.data, copias: [COPIAS_RECIBO[1]] });
+	}, [imprimir]);
+
+	const cancelarCopia = () => {
+		copiaRef.current = null;
+		setCopiaPendiente(null);
+	};
+
+	useEffect(() => {
+		if (!copiaPendiente) return;
+		copiaRef.current = copiaPendiente;
+		setCuenta(PAUSA_COPIA);
+		const iv = setInterval(() => setCuenta((c) => Math.max(c - 1, 0)), 1000);
+		const to = setTimeout(imprimirCopia, PAUSA_COPIA * 1000);
+		return () => {
+			clearInterval(iv);
+			clearTimeout(to);
+		};
+	}, [copiaPendiente, imprimirCopia]);
 
 	// ---- Cierre automático: 10 minutos sin actividad ----
 	const salirRef = useRef(onSalir);
@@ -456,7 +489,11 @@ function App({ sesion, onSalir }) {
 				usuario: sesion.nombre || sesion.usuario,
 			};
 
-			if (autoImprimir) imprimir({ tipo: "recibo", data: recibo, copias: COPIAS_RECIBO });
+			if (autoImprimir) {
+				// 1) Original para el acudiente ahora; 2) copia de archivo después de la pausa
+				imprimir({ tipo: "recibo", data: recibo, copias: [COPIAS_RECIBO[0]] });
+				setCopiaPendiente({ data: recibo, n: Date.now() });
+			}
 
 			// Suma las filas nuevas sin recargar (Cursos y Análisis se actualizan al instante)
 			setRecibos((prev) => [...prev, ...(r.recibo?.items || []).map((it) => ({ ...it, estado: "" }))]);
@@ -684,7 +721,7 @@ function App({ sesion, onSalir }) {
 								<input type="checkbox" checked={autoImprimir} onChange={(e) => cambiarAutoImprimir(e.target.checked)} />
 								<span>Imprimir 2 copias al guardar</span>
 							</label>
-							{false && soportaDirecta() && (
+							{soportaDirecta() && (
 								<button
 									type="button"
 									className={`rc-termica ${termica ? "on" : ""}`}
@@ -759,8 +796,27 @@ function App({ sesion, onSalir }) {
 					document.body
 				)}
 
+			{copiaPendiente && (
+				<div className="rc-copia no-print" key={`copia-${copiaPendiente.n}`}>
+					<span className="rc-copia-ico">✂</span>
+					<div className="rc-copia-txt">
+						<b>Corta el original y entrégalo al acudiente</b>
+						<span>
+							La copia de archivo sale en <strong>{cuenta}</strong> s
+						</span>
+					</div>
+					<button className="rc-primary" onClick={imprimirCopia}>
+						Ya corté · imprimir copia
+					</button>
+					<button className="rc-ghost" onClick={cancelarCopia}>
+						Sin copia
+					</button>
+					<i className="rc-copia-barra" style={{ animationDuration: `${PAUSA_COPIA}s` }} />
+				</div>
+			)}
+
 			{toast && (
-				<div key={toast.n} className={`rc-toast ${toast.tipo} no-print`}>
+				<div key={`toast-${toast.n}`} className={`rc-toast ${toast.tipo} no-print`}>
 					{toast.msg}
 				</div>
 			)}
