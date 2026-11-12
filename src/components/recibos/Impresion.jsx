@@ -12,11 +12,14 @@ export function Ticket({ copia, data }) {
 
 			<div className="t-row t-big">
 				<span>N° {numRecibo(data.numero)}</span>
-				<span>
-					{fmtFecha(data.fecha)}
-					{data.hora ? ` ${data.hora}` : ""}
-				</span>
+				<span>{fmtFecha(data.fecha)}</span>
 			</div>
+			{data.hora ? (
+				<div className="t-row t-hora">
+					<span>Hora</span>
+					<span>{data.hora}</span>
+				</div>
+			) : null}
 			<div className="t-dash" />
 
 			{data.items.map((it, i) => (

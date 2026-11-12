@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import "../styles/home.css";
 import emailjs from "@emailjs/browser";
 import { postAction, getSheet, leerSesion, borrarSesion, onSesionExpirada } from "./api.js";
@@ -14,6 +15,9 @@ import { Ticket, ResumenCarta } from "../components/recibos/Impresion.jsx";
 
 // Copias que salen al guardar un recibo (cada una se corta / rasga por separado)
 const COPIAS_RECIBO = ["ORIGINAL · ACUDIENTE", "COPIA · ARCHIVO"];
+
+// Ancho del rollo de la impresora térmica (58 u 80)
+const ANCHO_PAPEL_MM = 58;
 
 // ---- EmailJS ----
 const EMAILJS_SERVICE = "service_8dqywo2";
@@ -114,9 +118,26 @@ function App({ sesion, onSalir }) {
 	const [printJob, setPrintJob] = useState(null);
 	const imprimir = useCallback((job) => setPrintJob({ ...job, n: Date.now() }), []);
 
+	// Antes de imprimir, mide el recibo y le dice a Chrome el tamaño EXACTO de cada copia
+	// (58 mm de ancho x lo que mida el recibo). Así no sale una tira larga en blanco.
 	useEffect(() => {
 		if (!printJob) return;
-		const t = setTimeout(() => window.print(), 60);
+		const t = setTimeout(() => {
+			let estilo = document.getElementById("rc-tam-papel");
+			if (!estilo) {
+				estilo = document.createElement("style");
+				estilo.id = "rc-tam-papel";
+				document.head.appendChild(estilo);
+			}
+			estilo.textContent = "";
+			if (printJob.tipo === "recibo") {
+				const tickets = [...document.querySelectorAll(".print-area .ticket")];
+				const altoPx = Math.max(...tickets.map((el) => el.getBoundingClientRect().height), 0);
+				const altoMm = Math.ceil((altoPx * 25.4) / 96) + 2;
+				estilo.textContent = `@page { size: ${ANCHO_PAPEL_MM}mm ${altoMm}mm; margin: 0; }`;
+			}
+			window.print();
+		}, 120);
 		return () => clearTimeout(t);
 	}, [printJob?.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -678,16 +699,18 @@ function App({ sesion, onSalir }) {
 			)}
 
 			{/* ---------------- IMPRIMIBLE (oculto en pantalla) ---------------- */}
-			{printJob && (
-				<div
-					className={`print-area ${printJob.tipo === "resumen" ? "print-carta" : "print-ticket"}`}
-					key={printJob.n}
-				>
-					{printJob.tipo === "recibo" &&
-						printJob.copias.map((c) => <Ticket key={c} copia={c} data={printJob.data} />)}
-					{printJob.tipo === "resumen" && <ResumenCarta data={printJob.data} />}
-				</div>
-			)}
+			{printJob &&
+				createPortal(
+					<div
+						className={`print-area ${printJob.tipo === "resumen" ? "print-carta" : "print-ticket"}`}
+						key={printJob.n}
+					>
+						{printJob.tipo === "recibo" &&
+							printJob.copias.map((c) => <Ticket key={c} copia={c} data={printJob.data} />)}
+						{printJob.tipo === "resumen" && <ResumenCarta data={printJob.data} />}
+					</div>,
+					document.body
+				)}
 
 			{toast && (
 				<div key={toast.n} className={`rc-toast ${toast.tipo} no-print`}>
