@@ -262,6 +262,18 @@
   margin-right: auto; font-size: 13px; color: var(--suave); cursor: pointer; user-select: none;
 }
 .rc-toggle input { width: 16px; height: 16px; accent-color: var(--tinta); cursor: pointer; }
+.rc-actions .rc-toggle { margin-right: 0; }
+.rc-termica {
+  margin-right: auto;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 12px; border-radius: 999px;
+  border: 1px dashed #c9ced8; background: transparent; color: var(--suave);
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.rc-termica i { width: 7px; height: 7px; border-radius: 50%; background: #c9ced8; }
+.rc-termica:hover { border-color: var(--tinta); color: var(--tinta); }
+.rc-termica.on { border-style: solid; border-color: #bfe3d2; background: #effaf4; color: var(--ok); }
+.rc-termica.on i { background: #22a06b; }
 
 /* ---------- Form grid (CRUD) ---------- */
 .rc-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -928,12 +940,19 @@
 .ticket {
   width: var(--ticket-w);
   margin: 0 auto;
-  padding: 2mm 0 6mm;   /* 6 mm abajo para rasgar sin cortar el texto */
+  padding: 2mm 0 3mm;
   font-size: 11px;
   line-height: 1.3;
   color: #000;
 }
-.ticket + .ticket { break-before: page; page-break-before: always; }
+/* Las dos copias van seguidas en la misma tira, separadas por una línea para rasgar */
+.ticket { break-inside: avoid; }
+.ticket + .ticket { margin-top: 1mm; padding-top: 5mm; border-top: 1px dashed #000; position: relative; }
+.ticket + .ticket::before {
+  content: "✂ rasgar aquí"; position: absolute; top: -2.2mm; left: 50%; transform: translateX(-50%);
+  background: #fff; padding: 0 2mm; font-size: 8px;
+}
+.ticket:last-child { padding-bottom: 8mm; }  /* espacio final para rasgar */
 
 .t-inst { text-align: center; font-weight: 800; font-size: 12px; letter-spacing: 0.2px; }
 .t-sub { text-align: center; font-size: 10px; margin-top: 1px; }

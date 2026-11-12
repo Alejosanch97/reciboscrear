@@ -12,6 +12,7 @@ import { Login, Escudo } from "../components/recibos/Login.jsx";
 import { Cursos } from "../components/recibos/Cursos.jsx";
 import { Analisis } from "../components/recibos/Analisis.jsx";
 import { Ticket, ResumenCarta } from "../components/recibos/Impresion.jsx";
+import { soportaDirecta, puertoGuardado, conectarTermica, imprimirTermica } from "./termica.js";
 
 // Copias que salen al guardar un recibo (cada una se corta / rasga por separado)
 const COPIAS_RECIBO = ["ORIGINAL · ACUDIENTE", "COPIA · ARCHIVO"];
@@ -116,7 +117,41 @@ function App({ sesion, onSalir }) {
 
 	// ---- Impresión ----
 	const [printJob, setPrintJob] = useState(null);
-	const imprimir = useCallback((job) => setPrintJob({ ...job, n: Date.now() }), []);
+	const [termica, setTermica] = useState(false); // ¿impresora térmica conectada directo?
+	const termicaRef = useRef(false);
+	termicaRef.current = termica;
+	const avisarRef = useRef(null);
+
+	// Recibos → directo a la térmica si está conectada (exacto, sin ventana).
+	// Si no, o si falla, usa la ventana normal de Chrome. El resumen siempre va por la ventana.
+	const imprimir = useCallback(async (job) => {
+		if (job.tipo === "recibo" && termicaRef.current) {
+			try {
+				await imprimirTermica(job.data, job.copias);
+				return;
+			} catch (e) {
+				setTermica(false);
+				avisarRef.current?.("La impresora no respondió (" + (e.message || "error") + "). Uso la ventana normal.", "error");
+			}
+		}
+		setPrintJob({ ...job, n: Date.now() });
+	}, []);
+
+	// Si ya autorizaste la impresora antes, se reconecta sola al abrir la app
+	useEffect(() => {
+		if (!soportaDirecta()) return;
+		puertoGuardado().then((p) => setTermica(!!p)).catch(() => {});
+	}, []);
+
+	const conectarImpresora = async () => {
+		try {
+			await conectarTermica();
+			setTermica(true);
+			avisarRef.current?.("Impresora conectada: los recibos salen directo");
+		} catch (e) {
+			if (e?.name !== "NotFoundError") avisarRef.current?.("No se pudo conectar: " + (e.message || "error"), "error");
+		}
+	};
 
 	// Antes de imprimir, mide el recibo y le dice a Chrome el tamaño EXACTO de cada copia
 	// (58 mm de ancho x lo que mida el recibo). Así no sale una tira larga en blanco.
@@ -131,9 +166,9 @@ function App({ sesion, onSalir }) {
 			}
 			estilo.textContent = "";
 			if (printJob.tipo === "recibo") {
-				const tickets = [...document.querySelectorAll(".print-area .ticket")];
-				const altoPx = Math.max(...tickets.map((el) => el.getBoundingClientRect().height), 0);
-				const altoMm = Math.ceil((altoPx * 25.4) / 96) + 2;
+				const area = document.querySelector(".print-area");
+				const altoPx = area ? area.getBoundingClientRect().height : 0;
+				const altoMm = Math.ceil((altoPx * 25.4) / 96) + 1;
 				estilo.textContent = `@page { size: ${ANCHO_PAPEL_MM}mm ${altoMm}mm; margin: 0; }`;
 			}
 			window.print();
@@ -142,6 +177,7 @@ function App({ sesion, onSalir }) {
 	}, [printJob?.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	const notificar = useCallback((msg, tipo = "ok") => setToast({ msg, tipo, n: Date.now() }), []);
+	avisarRef.current = notificar;
 
 	// ---- Cierre automático: 10 minutos sin actividad ----
 	const salirRef = useRef(onSalir);
@@ -648,6 +684,17 @@ function App({ sesion, onSalir }) {
 								<input type="checkbox" checked={autoImprimir} onChange={(e) => cambiarAutoImprimir(e.target.checked)} />
 								<span>Imprimir 2 copias al guardar</span>
 							</label>
+							{soportaDirecta() && (
+								<button
+									type="button"
+									className={`rc-termica ${termica ? "on" : ""}`}
+									onClick={conectarImpresora}
+									title={termica ? "Impresión directa activa. Clic para cambiar de puerto." : "Conecta la térmica para imprimir sin ventana y sin gastar papel"}
+								>
+									<i />
+									{termica ? "Térmica conectada" : "Conectar impresora"}
+								</button>
+							)}
 							<button className="rc-ghost" onClick={limpiarRecibo} disabled={emitiendo}>
 								Limpiar
 							</button>
